@@ -6,14 +6,13 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from tensorflow.python.keras.models import Sequential
 from tensorflow.python.keras.layers import Dense, CuDNNLSTM, Flatten, TimeDistributed
-from sklearn.impute import SimpleImputer
 
 plt.style.use('fivethirtyeight')
 
 FILEPATH = 'D:/code/dji_stocks/'
 GOAL = 'V.csv'
 MODEL_NAME = 'DJI30'
-INPUT_LEN = 45
+INPUT_LEN = 60
 OUTPUT_LEN = 7
 PREDICT_GROUPS = 30
 dims = ['Close', 'High', 'Low', 'Open', 'Volume']
@@ -167,11 +166,11 @@ if __name__ == '__main__':
             x_train, y_train = np.load('dataset_x.npy'), np.load('dataset_y.npy')
         else:
             x_train, y_train = loadpath()
-            np.save('dataset_x', x_train)
-            np.save('dataset_y', y_train)
+           # np.save('dataset_x', x_train)
+           # np.save('dataset_y', y_train)
         print(x_train.shape, y_train.shape)
-        history = model.fit(x_train, y_train, batch_size=64, epochs=20, validation_split=0.3, shuffle=True, callbacks=[
-            tf.keras.callbacks.EarlyStopping(mode='min', monitor='val_loss', patience=5, restore_best_weights=True)
+        history = model.fit(x_train, y_train, batch_size=32, epochs=20, validation_split=0.3, shuffle=True, callbacks=[
+            tf.keras.callbacks.EarlyStopping(mode='min', monitor='val_loss', patience=1, restore_best_weights=True)
         ])
         model.save_weights(MODEL_NAME + '.h5')
         print(history.history)
