@@ -9,7 +9,7 @@ from tensorflow.python.keras.layers import Dense, CuDNNLSTM, Flatten, TimeDistri
 
 plt.style.use('fivethirtyeight')
 
-FILEPATH = 'D:/code/dji_stocks/'
+FILEPATH = './dataset/'
 GOAL = 'V.csv'
 MODEL_NAME = 'DJI30'
 INPUT_LEN = 60
