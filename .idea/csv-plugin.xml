@@ -10,6 +10,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="\dataset\SH000006.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="\dataset_x.csv">
           <value>
             <Attribute>
