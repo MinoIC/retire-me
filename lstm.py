@@ -6,6 +6,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from tensorflow.python.keras.models import Sequential
 from tensorflow.python.keras.layers import Dense, CuDNNLSTM, Flatten, TimeDistributed
+from sklearn.preprocessing import Normalizer
 
 plt.style.use('fivethirtyeight')
 
@@ -14,12 +15,13 @@ GOAL = 'V.csv'
 MODEL_NAME = 'DJI30'
 INPUT_LEN = 60
 OUTPUT_LEN = 7
-PREDICT_GROUPS = 30
-dims = ['Close', 'High', 'Low', 'Open', 'Volume']
+PREDICT_GROUPS = 20
+DIMS = ['Close', 'High', 'Low', 'Open']
+SCALER = Normalizer()
 GAP = 0
 for i in range(INPUT_LEN, INPUT_LEN + OUTPUT_LEN):
     if i % OUTPUT_LEN == 0:
-        GAP = i - 1 - OUTPUT_LEN
+        GAP = i - 1
 
 
 def loadpath():
@@ -50,7 +52,7 @@ def useful(arr):
 def loadfile(filename):
     df = pandas.read_csv(FILEPATH + filename)
     # create a new dataframe with only the close column
-    data = df.filter(dims)
+    data = df.filter(DIMS)
     dataset = data.values
     if len(dataset) <= INPUT_LEN:
         raise Exception('CSV file is too short to use')
@@ -70,21 +72,22 @@ def loadfile(filename):
             unuseful_count = INPUT_LEN
     for i in range(len(x_train)):
         y_train[i] = y_train[i] / x_train[i][0][0] - 1.0
-        for dim in range(len(dims)):
+        for dim in range(len(DIMS)):
             base = x_train[i][0][dim]
             for j in range(INPUT_LEN):
                 x_train[i][j][dim] = x_train[i][j][dim] / base - 1.0
+        x_train[i] = SCALER.fit_transform(x_train[i])
     # convert to numpy arrays
     x_train, y_train = np.array(x_train), np.array(y_train)
     # reshape the data
-    x_train = np.reshape(x_train, (x_train.shape[0], INPUT_LEN, len(dims)))
+    x_train = np.reshape(x_train, (x_train.shape[0], INPUT_LEN, len(DIMS)))
     return x_train, y_train
 
 
 def build_model():
     # build the model
     model = Sequential()
-    model.add(CuDNNLSTM(256, return_sequences=True, input_shape=(INPUT_LEN, len(dims))))
+    model.add(CuDNNLSTM(256, return_sequences=True, input_shape=(INPUT_LEN, len(DIMS))))
     model.add(CuDNNLSTM(256, return_sequences=True))
     model.add(TimeDistributed(Dense(1)))
     model.add(Flatten())
@@ -98,11 +101,20 @@ def build_model():
 
 def convert_to_input(test_slice):
     x_test = np.array(test_slice)
-    for dim in range(len(dims)):
+    for dim in range(len(DIMS)):
         base = x_test[0][dim]
         for j in range(INPUT_LEN):
             x_test[j][dim] = x_test[j][dim] / base - 1.0
-    return np.reshape(x_test, (1, INPUT_LEN, len(dims)))
+    return np.reshape(x_test, (1, INPUT_LEN, len(DIMS)))
+
+
+def judge_pn(inc):
+    if inc >= 0.1:
+        return 1
+    elif 0.1 > inc > -0.1:
+        return 0
+    else:
+        return -1
 
 
 def predict(model, test_data):
@@ -112,25 +124,29 @@ def predict(model, test_data):
     # cut_test_data = test_data[:-(len(test_data) % INPUTLEN)]
     cut_test_data = test_data
     predictions = []
-    x_test = convert_to_input(cut_test_data[0:INPUT_LEN, :])
     for i in range(INPUT_LEN, len(cut_test_data)):
-        prediction = model.predict(x_test)
-        x_test = np.append(np.delete(x_test, 0, 1),
-                           np.reshape([prediction[0][0].astype(np.float64)] + [np.mean(x_test[:, dim]) for dim in range(1, len(dims))],
-                                      newshape=(1, 1, len(dims))), 1)
-        inv = [[cut_test_data[i - INPUT_LEN, dim] * (p + 1.0) for p in x_test[0, :, dim]] for dim in range(len(dims))]
         if i % OUTPUT_LEN == OUTPUT_LEN - 1:
-            predictions.append(inv[0][-OUTPUT_LEN:])
-            x_test = convert_to_input(cut_test_data[i - INPUT_LEN + 1:i + 1, :])
-        else:
-            x_test = convert_to_input(np.swapaxes(np.array(inv), 0, 1))
+            predictions.append(single_predict(model, cut_test_data[i - INPUT_LEN + 1:i + 1, :]))
     predictions = np.array(predictions)
-    # calculate the RMSE
-    # rsp = np.reshape(predictions, newshape=(len(cut_test_data) - INPUTLEN))
-    # vld = np.reshape(cut_test_data[INPUTLEN:], rsp.shape)
-    # rmse = np.sqrt(np.mean(rsp - vld) ** 2)
-    # print('rmse:', rmse)
     return cut_test_data[:, 0], predictions
+
+
+def single_predict(model, test_data):
+    x_test = convert_to_input(test_data)
+    inv = []
+    for i in range(OUTPUT_LEN):
+        prediction = model.predict(np.reshape(SCALER.fit_transform(x_test[0]), (1, INPUT_LEN, len(DIMS))))
+        x_test = np.append(np.delete(x_test, 0, 1),
+                           np.reshape([prediction[0][0].astype(np.float64)] + [np.mean(x_test[:, dim]) for dim in range(1, len(DIMS))],
+                                      newshape=(1, 1, len(DIMS))), 1)
+        inv = [[test_data[i - INPUT_LEN, dim] * (p + 1.0) for p in x_test[0, :, dim]] for dim in range(len(DIMS))]
+        x_test = convert_to_input(np.swapaxes(np.array(inv), 0, 1))
+    return inv[0][-OUTPUT_LEN:]
+
+
+def single_predict_pn(model, test_data):
+    prediction = single_predict(model, test_data)
+    return judge_pn(prediction[-1] / prediction[0] - 1.0)
 
 
 def plot_figure(test_data, predictions):
@@ -151,7 +167,7 @@ def plot_figure(test_data, predictions):
 def load_test(filename):
     df = pandas.read_csv(FILEPATH + filename)
     # create a new dataframe with only the close column
-    data = df.filter(dims)
+    data = df.filter(DIMS)
     dataset = data.values
     return dataset[-(INPUT_LEN + PREDICT_GROUPS * OUTPUT_LEN):, :]
 
@@ -166,14 +182,15 @@ if __name__ == '__main__':
             x_train, y_train = np.load('dataset_x.npy'), np.load('dataset_y.npy')
         else:
             x_train, y_train = loadpath()
-           # np.save('dataset_x', x_train)
-           # np.save('dataset_y', y_train)
+        np.save('dataset_x', x_train)
+        np.save('dataset_y', y_train)
         print(x_train.shape, y_train.shape)
-        history = model.fit(x_train, y_train, batch_size=32, epochs=20, validation_split=0.3, shuffle=True, callbacks=[
-            tf.keras.callbacks.EarlyStopping(mode='min', monitor='val_loss', patience=1, restore_best_weights=True)
+        history = model.fit(x_train, y_train, batch_size=32, epochs=50, validation_split=0.3, shuffle=True, callbacks=[
+            tf.keras.callbacks.EarlyStopping(mode='min', monitor='val_loss', patience=5, restore_best_weights=True)
         ])
         model.save_weights(MODEL_NAME + '.h5')
-        print(history.history)
+        with open('history.txt', 'wt') as f:
+            print(history.history, file=f)
     test_data = load_test(GOAL)
     cut_test_data, predictions = predict(model, test_data)
     plot_figure(cut_test_data, predictions)

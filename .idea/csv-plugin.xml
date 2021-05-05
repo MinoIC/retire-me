@@ -10,21 +10,7 @@
             </Attribute>
           </value>
         </entry>
-        <entry key="\dataset\SH000006.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="\dataset_x.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="\lstm.py">
+        <entry key="\dataset\AMGN.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />

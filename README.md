@@ -10,3 +10,11 @@
 #### run
 
 安装 lstm.py 中所需的依赖后，可以直接通过 python ./lstm.py 来运行并直接输出一个预测结果且保存截图为 predict.png
+
+#### predict
+
+![predict](predict.png)
+
+#### training history
+
+[history](history.txt)
