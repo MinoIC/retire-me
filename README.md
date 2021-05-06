@@ -17,4 +17,4 @@
 
 #### training history
 
-[history](history.txt)
+![history](history.png)

@@ -1,3 +1,4 @@
+import json
 import math
 import pandas
 import numpy as np
@@ -164,6 +165,18 @@ def plot_figure(test_data, predictions):
     plt.show()
 
 
+def plot_history():
+    plt.figure(figsize=(16, 8))
+    j = json.loads(open('history.txt', 'r').read())
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
+    plt.plot(j['loss'], label='loss')
+    plt.plot(j['val_loss'], label='val_loss')
+    plt.legend()
+    plt.savefig('history.png')
+    plt.show()
+
+
 def load_test(filename):
     df = pandas.read_csv(FILEPATH + filename)
     # create a new dataframe with only the close column
@@ -185,12 +198,13 @@ if __name__ == '__main__':
         np.save('dataset_x', x_train)
         np.save('dataset_y', y_train)
         print(x_train.shape, y_train.shape)
-        history = model.fit(x_train, y_train, batch_size=32, epochs=50, validation_split=0.3, shuffle=True, callbacks=[
-            tf.keras.callbacks.EarlyStopping(mode='min', monitor='val_loss', patience=5, restore_best_weights=True)
+        history = model.fit(x_train, y_train, batch_size=32, epochs=100, validation_split=0.3, shuffle=True, callbacks=[
+            # tf.keras.callbacks.EarlyStopping(mode='min', monitor='val_loss', patience=5, restore_best_weights=True)
         ])
         model.save_weights(MODEL_NAME + '.h5')
         with open('history.txt', 'wt') as f:
-            print(history.history, file=f)
+            json.dump(history.history, f, indent=4, separators=(',', ': '))
+        plot_history()
     test_data = load_test(GOAL)
     cut_test_data, predictions = predict(model, test_data)
     plot_figure(cut_test_data, predictions)
