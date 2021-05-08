@@ -5,6 +5,7 @@ import numpy as np
 import os
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import shutil
 from tensorflow.python.keras.models import Sequential
 from tensorflow.python.keras.layers import Dense, CuDNNLSTM, Flatten, TimeDistributed
 from sklearn.preprocessing import Normalizer
@@ -15,11 +16,11 @@ FILEPATH = './dataset/'
 GOAL = 'V.csv'
 MODEL_NAME = 'DJI30'
 INPUT_LEN = 60
-OUTPUT_LEN = 7
+OUTPUT_LEN = 4
 PREDICT_GROUPS = 100
 DIMS = ['Close', 'High', 'Low', 'Open']
 SCALER = Normalizer()
-Threshold = 0.04
+Threshold = 0.01
 GAP = 0
 for i in range(INPUT_LEN, INPUT_LEN + OUTPUT_LEN):
     if i % OUTPUT_LEN == 0:
@@ -141,17 +142,20 @@ def test_pn(model, test_data):
     for i in range(INPUT_LEN, len(test_data) - OUTPUT_LEN):
         pred = single_predict_pn(model, test_data[i - INPUT_LEN:i, :])
         vald = judge_pn(test_data[i + OUTPUT_LEN][0] / test_data[i + 1][0] - 1.0)
-        if pred == 1 & vald == 1:
+        if pred == 1 and vald == 1:
+            # print(pred, vald,'TP')
             TP = TP + 1.0
-        if pred == 1 & vald == -1:
+        if pred == 1 and vald == -1:
+            # print(pred, vald,'FP')
             FP = FP + 1.0
-        if pred == -1 & vald == -1:
+        if pred == -1 and vald == -1:
+            # print(pred, vald,'TN')
             TN = TN + 1.0
-        if pred == -1 & vald == 1:
+        if pred == -1 and vald == 1:
+            # print(pred, vald,'FN')
             FN = FN + 1.0
-       # print(pred, ' ', vald)
     A = (TP + TN) / (TP + TN + FP + FN)
-    print(A, TP, TN, FP, FN)
+    print(' ', A, TP, TN, FP, FN)
     return A
 
 
@@ -228,9 +232,12 @@ if __name__ == '__main__':
         np.save('dataset_y', y_train)
         print(x_train.shape, y_train.shape)
         pn_accuracy = []
-        history = model.fit(x_train, y_train, batch_size=32, epochs=30, validation_split=0.1, shuffle=True, callbacks=[
+        shutil.rmtree('model_history')
+        os.mkdir('model_history')
+        history = model.fit(x_train, y_train, batch_size=64, epochs=20, validation_split=0.2, shuffle=True, callbacks=[
             # tf.keras.callbacks.EarlyStopping(mode='min', monitor='loss', patience=5, restore_best_weights=True)
-            tf.keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: pn_accuracy.append(test_pn(model, test_data)))
+            tf.keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: pn_accuracy.append(test_pn(model, test_data))),
+            tf.keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: model.save_weights('model_history/'+str(epoch)+'.h5'))
         ])
         model.save_weights(MODEL_NAME + '.h5')
         history.history['pn_accuracy'] = pn_accuracy
