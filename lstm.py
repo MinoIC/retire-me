@@ -10,20 +10,20 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import shutil
 from tensorflow.python.keras.models import Sequential
-from tensorflow.python.keras.layers import Dense, CuDNNLSTM, Flatten, TimeDistributed, Dropout
+from tensorflow.python.keras.layers import Dense, CuDNNLSTM, Flatten, TimeDistributed, Dropout, Conv1D, MaxPooling1D, Activation
 from sklearn.preprocessing import MinMaxScaler
 
 plt.style.use('fivethirtyeight')
 
-MODEL_NAME = 'spx'
+MODEL_NAME = 'djia'
 FILEPATH = './' + MODEL_NAME + '/'
-GOAL = 'amzn.csv'
-INPUT_LEN =60
+GOAL = 'AAPL.csv'
+INPUT_LEN = 60
 OUTPUT_LEN = 7
-PREDICT_GROUPS = 30
+PREDICT_GROUPS = 50
 SCALE_MULTIPLE = 1.0
 SCALE_ADD = 0.0
-DIMS = ['Close', 'High', 'Low', 'Open','Volume']
+DIMS = ['Adj_Close', 'Adj_High', 'Adj_Low', 'Adj_Open', 'Volume']
 Threshold = 0.002
 
 GAP = 0
@@ -42,15 +42,19 @@ def useful(arr):
 
 def loadfile(filename):
     df = pandas.read_csv(FILEPATH + filename)
+    df['Adj_Close'] = df['Adj Close']
+    df['Adj_High'] = df['High'] * df['Adj Close'] / df['Close']
+    df['Adj_Low'] = df['Low'] * df['Adj Close'] / df['Close']
+    df['Adj_Open'] = df['Open'] * df['Adj Close'] / df['Close']
     # create a new dataframe with only the close column
     data = df.filter(DIMS)
     scaler = MinMaxScaler()
-    for dim in DIMS :
+    for dim in DIMS:
         data[dim] = scaler.fit_transform(data[dim].values.reshape(-1, 1))
     dataset = data.values
     if len(dataset) <= INPUT_LEN:
         raise Exception('CSV file is too short to use')
-    train_data_len = len(dataset)-(INPUT_LEN + PREDICT_GROUPS * OUTPUT_LEN)
+    train_data_len = len(dataset) - (INPUT_LEN + PREDICT_GROUPS * OUTPUT_LEN)
     # Scale the data
     x_train = []
     y_train = []
@@ -67,14 +71,18 @@ def loadfile(filename):
 def build_model():
     # build the model
     model = Sequential()
-    model.add(CuDNNLSTM(256, return_sequences=True,kernel_regularizer=keras.regularizers.L2(0.0006), input_shape=(INPUT_LEN, len(DIMS))))
+    model.add(Conv1D(64, 3, padding='same', input_shape=(INPUT_LEN, len(DIMS))))
+    model.add(MaxPooling1D(pool_size=2))
+    model.add(CuDNNLSTM(256, return_sequences=True,kernel_regularizer=keras.regularizers.L1(0.0003)))
+    model.add(Dropout(0.2))
     model.add(CuDNNLSTM(256, return_sequences=True))
-    model.add(TimeDistributed(Dense(1)))
+    model.add(Dropout(0.2))
+    model.add(Conv1D(32, 3, padding='same'))
+    model.add(MaxPooling1D(pool_size=2))
     model.add(Flatten())
-    model.add(Dense(5, activation='linear'))
-    model.add(Dense(1))
+    model.add(Dense(units=1,activation='linear'))
     # compile the model
-    model.compile(optimizer="adadelta", loss='mse')
+    model.compile(optimizer="adadelta", loss='mse', metrics=['mae'])
     model.summary()
     return model
 
@@ -132,7 +140,8 @@ def single_predict(model, test_data):
     x_test = td
     for i in range(OUTPUT_LEN):
         prediction = model.predict(np.reshape(x_test, (1, INPUT_LEN, len(DIMS))))
-        x_test = np.append(x_test, np.reshape(np.append(prediction[0],[np.mean(x_test[:,dim]) for dim in range(1,len(DIMS))],axis=0),newshape=(1, len(DIMS))), 0)[1:]
+        x_test = np.append(x_test, np.reshape(np.append(prediction[0], [np.mean(x_test[:, dim]) for dim in range(1, len(DIMS))], axis=0),
+                                              newshape=(1, len(DIMS))), 0)[1:]
         # inv = [[test_data[i - INPUT_LEN - 1 + j, dim] * (x_test[0, j, dim] + 1.0) for j in range(INPUT_LEN + 1)] for dim in range(len(DIMS))]
     return np.array(x_test)[-OUTPUT_LEN:, 0]
 
@@ -164,22 +173,23 @@ def plot_figure(test_data, predictions):
 
 def plot_history():
     plt.figure(figsize=(16, 8))
-    # plt.subplot(2, 1, 1)
+    plt.subplot(2, 1, 1)
     j = json.loads(open('history.txt', 'r').read())
     plt.xlabel('epoch')
     plt.ylabel('loss')
-    plt.plot(j['loss'], label='loss')
-    plt.plot(j['val_loss'], label='val_loss')
+    mts=['loss','mae','val_loss','val_mae']
+    for mt in mts:
+        plt.plot(j[mt], label=mt)
     plt.legend()
     plt.gca().xaxis.set_major_locator(MaxNLocator(nbins='auto', integer=True))
-    # plt.subplot(2, 1, 2)
-    # plt.xlabel('epoch')
-    # plt.ylabel('pn_accuracy')
-    # plt.plot(j['pn_accuracy'], label='accuracy')
-    # plt.legend()
-    # plt.gca().xaxis.set_major_locator(MaxNLocator(nbins='auto', integer=True))
+    plt.subplot(2, 1, 2)
+    plt.xlabel('epoch')
+    plt.ylabel('pn_accuracy')
+    plt.plot(j['pn_accuracy'], label='accuracy')
+    plt.legend()
+    plt.gca().xaxis.set_major_locator(MaxNLocator(nbins='auto', integer=True))
     plt.savefig('history.png')
-    # plt.show()
+    plt.show()
 
 
 if __name__ == '__main__':
@@ -191,8 +201,8 @@ if __name__ == '__main__':
         np.save('dataset_x', x_train)
         np.save('dataset_y', y_train)
         np.save('dataset_test', test_data)
-    print("x_train.shape:",x_train.shape)
-    print("y_train.shape:",y_train.shape)
+    print("x_train.shape:", x_train.shape)
+    print("y_train.shape:", y_train.shape)
     try:
         model.load_weights(MODEL_NAME + '.h5')
     except Exception as E:
@@ -200,15 +210,15 @@ if __name__ == '__main__':
         pn_accuracy = []
         shutil.rmtree('model_history')
         os.mkdir('model_history')
-        history = model.fit(x_train, y_train, batch_size=8, epochs=100, validation_split=0.15, shuffle=True, callbacks=[
+        history = model.fit(x_train, y_train, batch_size=8, epochs=200, validation_split=0.05, shuffle=True, callbacks=[
             # tf.keras.callbacks.EarlyStopping(mode='min', monitor='val_loss', patience=15, restore_best_weights=True),
-            # tf.keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: pn_accuracy.append(test_pn(model, test_data))),
+            tf.keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: pn_accuracy.append(test_pn(model, test_data))),
             tf.keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: model.save_weights('model_history/' + str(epoch) + '.h5'))
         ])
         model.save_weights(MODEL_NAME + '.h5')
-        #history.history['pn_accuracy'] = pn_accuracy
+        history.history['pn_accuracy'] = pn_accuracy
         with open('history.txt', 'wt') as f:
-             json.dump(history.history, f, indent=4, separators=(',', ': '))
+            json.dump(history.history, f, indent=4, separators=(',', ': '))
     plot_history()
     cut_test_data, predictions = predict(model, test_data)
     plot_figure(cut_test_data, predictions)
